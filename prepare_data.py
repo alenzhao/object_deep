@@ -17,13 +17,17 @@ import Image
 import pickle
 import argparse
 
-def get_image(img_fname, new_size = None, resize_method='bicubic'):
+def get_image(im_fname, max_edge = None, min_edge = None, 
+			check = False, resize_method='bicubic'):
 	""" Return a grayscaled and resized image as numpy array
 
 	Inputs:
-		img_fname: Image file name
-		new_size: new image size, if None just check image and
-					return image file name
+		im_fname: Image file name
+		max_edge: maximum edge length
+		min_edge: minimum edge length
+			if both are None: no resize
+		check: If ture just check if image could be open 
+			and return image file name
 		resize_method: 'antialias' or 'bicubic'
 
 	Outputs:
@@ -32,37 +36,47 @@ def get_image(img_fname, new_size = None, resize_method='bicubic'):
 
 	# -- open image and convert to grayscale
 	try:
-		img = Image.open(img_fname).convert('L')
+		img = Image.open(im_fname).convert('L')
 	except IOError:
 		if verbose:
-			print "Failed opening: ",img_fname
+			print "Failed opening: ",im_fname
 		return None
 
-	if new_size != None:
+	# -- just check mode
+	if check == True:
+		return im_fname
+
+	#TODO implemt min_edge
+	if max_edge != None:
+		# -- resize so that the biggest edge is max_edge (keep aspect ratio)
+		iw, ih = img.size
+		if iw > ih:
+			new_iw = max_edge
+			new_ih = int(round(1.* max_edge * ih/iw))
+		else:
+			new_iw = int(round(1.* max_edge * iw/ih))
+			new_ih = max_edge
+
 		# -- resize image
 		if resize_method.lower() == 'bicubic':
-			img = img.resize(new_size, Image.BICUBIC)
+			img = img.resize((new_iw, new_ih), Image.BICUBIC)
 		elif resize_method.lower() == 'antialias':
-			img = img.resize(new_size, Image.ANTIALIAS)
+			img = img.resize((new_iw, new_ih), Image.ANTIALIAS)
 
 		else:
 			raise ValueError("resize_method '%s' not understood", resize_method)
 
 		# -- convert to a numpy array
 		imga = sp.misc.fromimage(img)/255.
-	else:
-		return img_fname
 
 	return imga
 
 
-def get_image_list(img_path, im_size = None, class_list = None):
+def get_image_list(img_path, class_list = None):
 	""" Return list all images and class names
 	
 	Inputs:
 		img_path: Path to image folders (If is empty pwd will be used)
-		im_size: Size to which change images to. If None just return image 
-					file names
 		class_list: List of classes (If None, all folders in img_path will be
 					considerd)
 
@@ -96,7 +110,7 @@ def get_image_list(img_path, im_size = None, class_list = None):
 		
 		#get images as array or just check if the image is openable
 		#if im_size is none and return the file name
-		data = [get_image(name, im_size) for name in im_list]
+		data = [get_image(name, None, None, True) for name in im_list]
 
 		#remove None values
 		for i_ind in range (data.count(None)):
@@ -178,14 +192,15 @@ def divide_data(images, im_n_limit, train_r, valid_r):
 
 	
 
-def chunk_data(data, chunk_size, im_size, save_path, name_pattern):
+def chunk_data(data, chunk_size, max_edge, min_edge, save_path, name_pattern):
 	"""Chunk the data and load images and save images data and
 		labels for each chunk
 	
 	Inputs
 		data: a tuple of arrays of image file names and labels
 		chunk_size: size of each chink
-		im_size: image size
+		max_edge: maximum edge length
+		min_edge: minimum edge length
 		save_path: output files path
 		name_pattern: pattern for naming output files
 
@@ -203,7 +218,7 @@ def chunk_data(data, chunk_size, im_size, save_path, name_pattern):
 	for i_ind in range(chunk_num):
 		images = data[i_ind*chunk_size:(i_ind+1) * chunk_size]
 		# --load image data
-		images = sp.array([get_image(name, im_size) for name in images])
+		images = [get_image(name, max_edge, min_edge) for name in images]
 	
 		# --pickle
 		fname = os.path.join(save_path, "%s_%03d.pkl" % (name_pattern, i_ind))
@@ -220,7 +235,8 @@ def chunk_size(im_size, memory_size, data_type):
 	"""Calculate number of images in each chunk that could fit in memory
 
 	Inputs:
-		im_size: image size tuple
+		im_size: max edge image size (We will consider max size
+			which would be case if square image
 		memory_size: memory size limit in MB
 		data_type: numpy data type that is used for saving image arrays
 
@@ -231,8 +247,7 @@ def chunk_size(im_size, memory_size, data_type):
 	# -- convert Mb to bytes
 	memory_size = 1048576 * memory_size
 	data_type_size = sp.array([0], dtype = data_type).itemsize
-	chunk_size =  memory_size / (im_size[0] * im_size[1] * \
-					data_type_size)
+	chunk_size =  memory_size / (im_size**2  * 	data_type_size)
 
 	return chunk_size
 
@@ -245,9 +260,12 @@ def main():
 		'path to folder that images are located', required = True)
 	parser.add_argument('-o', '--output', dest = 'output', help =\
 		'output path for pickle files', required = True)
-	parser.add_argument('-s', '--size', dest = 'im_size',
-		help = 'Size to change image to. One number reqired, \
-		will make images square', required = True, type = int)
+	parser.add_argument('--max', dest = 'max_edge', 
+		help = 'Size of maximum edge length for image resize', 
+		default = None, type = int)
+	parser.add_argument('--min', dest = 'min_edge',
+		help = 'Size of minimum edge length for image resize', 
+		default = None, type = int)
 	parser.add_argument('-m', '--memsize', dest = 'mem_size',
 		help = 'GPU global memory size in Mb', default = 30, type = int)
 	parser.add_argument('-t', '--type', dest='data_type' , choices = [32, 64],
@@ -281,13 +299,13 @@ def main():
 	train, valid, test = divide_data(images, im_n_limit, 
 							args.train, args.valid)
 	#chunk and save it
-	chunk =  chunk_size((args.im_size, args.im_size), args.mem_size, 
+	chunk =  chunk_size(max(args.max_edge, args.min_edge), args.mem_size, 
 						data_type)
-	chunk_data(train, chunk, (args.im_size, args.im_size),
+	chunk_data(train, chunk, args.max_edge, args.min_edge,
 				args.output, args.name + '_train')
-	chunk_data(valid, chunk, (args.im_size, args.im_size),
+	chunk_data(valid, chunk, args.max_edge, args.min_edge,
 				args.output, args.name + '_valid' )
-	chunk_data(test, chunk, (args.im_size, args.im_size),
+	chunk_data(test, chunk, args.max_edge, args.min_edge,
 				args.output, args.name + '_test')
 
 
