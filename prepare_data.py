@@ -1,3 +1,15 @@
+""" A module for preparing data for object categorization task
+
+	Read images from diffrent classes each in a seprate folder,
+	and gray scale, rezie images and save them as pickle files in 
+	multiple chunks
+
+mehdi.mirza@idiap.ch
+February 2011
+"""
+
+
+
 import os
 import glob
 import scipy as sp
@@ -168,7 +180,16 @@ def divide_data(images, im_n_limit, train_r, valid_r):
 
 def chunk_data(data, chunk_size, im_size, save_path, name_pattern):
 	"""Chunk the data and load images and save images data and
-		labels for each chunk"""
+		labels for each chunk
+	
+	Inputs
+		data: a tuple of arrays of image file names and labels
+		chunk_size: size of each chink
+		im_size: image size
+		save_path: output files path
+		name_pattern: pattern for naming output files
+
+	"""
 
 	# -- preapre output path
 	if not os.path.isdir(save_path):
@@ -272,21 +293,6 @@ def main():
 
 
 if __name__ == "__main__":
-	global verbose
-	verbose = False
 
-
-	#img_path = '/idiap/home/mmirza/data/image_net/'
-	#load_data(img_path)
 	main()
 
-
-	"""Example calculation of chunk sizes:
-		image size: 300 * 300
-		data tyoe: float32 -> 4 Byte
-		number of elements: 100
-
-		300 * 300 * 4 * 100 = 36000000 Bytes
-							= 34.33 Mb
-	"""
-	
